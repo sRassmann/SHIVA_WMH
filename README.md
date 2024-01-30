@@ -41,6 +41,26 @@ The provided python script *predict_one_file.py* can be used as an example of us
 
 A NVIDIA GPU with at least 9Go of RAM is needed to compute inferences with the trained models.
 
+## Docker
+
+The docker image can be built with the following command:
+
+```bash
+docker build --build-arg UID=$(id -u) --build-arg GID=$(id -g) --build-arg USER=$USER -t $USER/shiva_tf .
+```
+
+and run with the following command (linking some custom data directories)
+
+```bash
+GPU_ARG=0
+docker run --rm --user "$(id -u):$(id -g)" --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 -it \
+  --name "$USER""_GPU_""${GPU//,/_}" --gpus "$GPU_ARG" -v $(pwd):/workspace/shiva_wmh \
+ -v $(readlink data/RS):/workspace/shiva_wmh/data/RS \
+ -v $(readlink data/predicted):/workspace/shiva_wmh/data/predicted \
+ $USER/shiva_tf bash
+```
+
+
 ## Acknowledgements
 This work has been done in collaboration between the [Fealinx](http://www.fealinx-biomedical.com/en/) company and the [GIN](https://www.gin.cnrs.fr/en/) laboratory (Groupe d'Imagerie Neurofonctionelle, UMR5293, IMN, Univ. Bordeaux, CEA , CNRS) with grants from the Agence Nationale de la Recherche (ANR) with the projects [GinesisLab](http://www.ginesislab.fr/) (ANR 16-LCV2-0006-01) and [SHIVA](https://rhu-shiva.com/en/) (ANR-18-RHUS-0002)
 
