@@ -44,19 +44,8 @@ def is_greater_0(x):
     return x > 0
 
 
-def main(args):
-    # The tf model files for the predictors, the prediction will be averaged
-    predictor_files = args.model
-    if not predictor_files:
-        predictor_files = [
-            f"WMH/v0-FLAIR.WMH/20220412-192541_Unet3Dv2-10.7.2-1.8-FLAIR.WMH_fold_WMH_1x5_2ndUnat_fold_{i}_model.h5"
-            for i in range(5)
-        ]
-        print(
-            f"Using default model ensemble from {os.path.dirname(predictor_files[0])}"
-        )
-
-    t = transforms.Compose(
+def get_transforms(args):
+    load_transforms = transforms.Compose(
         [
             transforms.LoadImaged(
                 image_only=True, ensure_channel_first=True, keys=["image", "mask"]
@@ -76,9 +65,25 @@ def main(args):
                 allow_smaller=True,
                 margin=1,
             ),
+            # based on this comment: https://github.com/pboutinaud/SHIVA_PVS/issues/2#issuecomment-1499029783
+            transforms.Orientationd(keys=["image", "mask"], axcodes="RAS"),
             transforms.ResizeWithPadOrCropD(spatial_size=size, keys=["image", "mask"]),
         ]
     )
+    return load_transforms
+
+
+def main(args):
+    # The tf model files for the predictors, the prediction will be averaged
+    predictor_files = args.model
+    if not predictor_files:
+        predictor_files = [
+            f"WMH/v0-FLAIR.WMH/20220412-192541_Unet3Dv2-10.7.2-1.8-FLAIR.WMH_fold_WMH_1x5_2ndUnat_fold_{i}_model.h5"
+            for i in range(5)
+        ]
+        print(
+            f"Using default model ensemble from {os.path.dirname(predictor_files[0])}"
+        )
 
     for input_image in args.input:
         print(f"Predicting {input_image}")
@@ -98,7 +103,7 @@ def main(args):
             output,
             brainmask,
             predictor_files,
-            t,
+            get_transforms(args),
             save_original=args.save_original,
         )
 

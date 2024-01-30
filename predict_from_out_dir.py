@@ -33,40 +33,16 @@ def main(args):
             f"Using default model ensemble from {os.path.dirname(predictor_files[0])}"
         )
 
-    t = transforms.Compose(
-        [
-            transforms.LoadImaged(
-                image_only=True, ensure_channel_first=True, keys=["image", "mask"]
-            ),
-            transforms.Lambdad(keys="mask", func=close_mask),
-            transforms.MaskIntensityd(
-                keys="image",
-                mask_key="mask",
-                allow_missing_keys=False,
-                select_fn=is_greater_0,
-            )
-            if args.skull_strip
-            else transforms.Identityd(keys="mask"),
-            transforms.CropForegroundd(
-                keys=("mask", "image"),
-                source_key="mask",
-                allow_smaller=True,
-                margin=1,
-            ),
-            transforms.ResizeWithPadOrCropD(spatial_size=size, keys=["image", "mask"]),
-        ]
-    )
-
     print(os.path.join(args.input, "*", args.file))
     files = glob(os.path.join(args.input, "*", args.file))
     print(f"Found {len(files)} files in {args.input}.")
     for input_image in tqdm(files):
         predict_image(
             input_image,
-            input_image.replace(".nii.gz", "_wmh_seg.nii.gz"),
+            input_image.replace(".nii.gz", "_wmh_seg_ras.nii.gz"),
             os.path.join(os.path.dirname(input_image), "mask.nii.gz"),
             predictor_files,
-            t,
+            get_transforms(args),
             save_original=args.save_original,
             verbose=False,
         )
