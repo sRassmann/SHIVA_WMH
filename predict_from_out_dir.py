@@ -39,7 +39,7 @@ def main(args):
     for input_image in tqdm(files):
         predict_image(
             input_image,
-            input_image.replace(".nii.gz", "_wmh_seg_ras.nii.gz"),
+            input_image.replace(".nii.gz", "_wmh_seg.nii.gz"),
             os.path.join(os.path.dirname(input_image), "mask.nii.gz"),
             predictor_files,
             get_transforms(args),

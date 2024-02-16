@@ -65,7 +65,7 @@ def get_transforms(args):
                 allow_smaller=True,
                 margin=1,
             ),
-            # based on this comment: https://github.com/pboutinaud/SHIVA_PVS/issues/2#issuecomment-1499029783
+            # based on this comment: https://github.com/pboutinaud/SHIVA_PVS/issues/2#issuecomment-1499029783 and what they mention in the paper
             transforms.Orientationd(keys=["image", "mask"], axcodes="RAS"),
             transforms.ResizeWithPadOrCropD(spatial_size=size, keys=["image", "mask"]),
         ]
@@ -116,6 +116,7 @@ def predict_image(
     t,
     save_original=False,
     verbose=True,
+    threshold=0.2,  # according to README.md https://github.com/pboutinaud/SHIVA_WMH/tree/main/WMH/v0/FLAIR.WMH
 ):
     img = {"image": input_path, "mask": mask_path}
     img = t(img)
@@ -140,9 +141,10 @@ def predict_image(
         predictions.append(prediction)
     # Average all predictions
     predictions = np.stack(predictions, axis=0)[..., 0]
-    predictions = (
-        np.mean(predictions, axis=0) * (mask > 0)
-    ) > 0.2  # according to README.md https://github.com/pboutinaud/SHIVA_WMH/tree/main/WMH/v0/FLAIR.WMH
+
+    predictions = np.mean(predictions, axis=0) * (mask > 0)
+    if threshold > 0:
+        predictions = (predictions > threshold).astype(np.uint8)
     img["mask"] *= 0
     img["mask"] += torch.Tensor(predictions)
     inv = t.inverse(img)
