@@ -21,25 +21,34 @@ size = (160, 214, 176)
 from predict_one_file import *
 
 
-def main(args):
-    # The tf model files for the predictors, the prediction will be averaged
-    predictor_files = args.model
-    if not predictor_files:
-        predictor_files = [
-            f"WMH/v0-FLAIR.WMH/20220412-192541_Unet3Dv2-10.7.2-1.8-FLAIR.WMH_fold_WMH_1x5_2ndUnat_fold_{i}_model.h5"
-            for i in range(5)
-        ]
-        print(
-            f"Using default model ensemble from {os.path.dirname(predictor_files[0])}"
-        )
+def find_t1(input_image, args):
+    if not args.t1 or "T1" not in args.version:
+        return None
 
+    t1 = input_image.replace(args.file, args.t1)
+    if os.path.exists(t1):
+        return t1
+    else:
+        subj = os.path.basename(os.path.dirname(input_image))
+        for a in ["inference_wmh", "inference_pvs", "inference_t", "inference"]:
+            f = os.path.join(
+                "../flairsyn/output/original", a, subj, os.path.basename(t1)
+            )
+            if os.path.exists(f):
+                return f
+
+
+def main(args):
+    predictor_files = get_weights(args)
     print(os.path.join(args.input, "*", args.file))
     files = glob(os.path.join(args.input, "*", args.file))
     print(f"Found {len(files)} files in {args.input}.")
+    out_name = "wmh_seg_t1" if "T1" in args.version else "wmh_seg"
     for input_image in tqdm(files):
         predict_image(
             input_image,
-            input_image.replace(".nii.gz", "_wmh_seg.nii.gz"),
+            find_t1(input_image, args),
+            input_image.replace(".nii.gz", f"_{out_name}.nii.gz"),
             os.path.join(os.path.dirname(input_image), "mask.nii.gz"),
             predictor_files,
             get_transforms(args),
@@ -67,6 +76,13 @@ if __name__ == "__main__":
         default="pred_flair.nii.gz",
     )
     parser.add_argument(
+        "-t1",
+        "--t1",
+        type=str,
+        help="name of the t1 file within subject directory",
+        default="t1_n4.nii.gz",
+    )
+    parser.add_argument(
         "-m", "--model", type=Path, action="append", help="(multiple) prediction models"
     )
     parser.add_argument(
@@ -79,6 +95,13 @@ if __name__ == "__main__":
         "--skull_strip",
         action="store_true",
         help="Skull strip the image before inference",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        type=str,
+        help="Version of the model to use (v0, v1-T1)",
+        default="v0",
     )
 
     args = parser.parse_args()

@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition="HPC-4GPUs,HPC-8GPUs"
-#SBATCH --mem="4G"
+#SBATCH --mem="16G"
 #SBATCH --cpus-per-task="4"
 #SBATCH --gres=gpu:1
-#SBATCH --time="00:01:00"
+#SBATCH --time="24:00:00"
 #SBATCH --output=/home/rassmanns/diffusion/flairsyn/output/logs/slurm/%j_%x.out
 #SBATCH --job-name="wmh_pred_n4_2"
 

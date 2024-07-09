@@ -48,7 +48,10 @@ def get_transforms(args):
     load_transforms = transforms.Compose(
         [
             transforms.LoadImaged(
-                image_only=True, ensure_channel_first=True, keys=["image", "mask"]
+                image_only=True,
+                ensure_channel_first=True,
+                keys=["image", "mask", "t1"],
+                allow_missing_keys=True,
             ),
             transforms.Lambdad(keys="mask", func=close_mask),
             transforms.MaskIntensityd(
@@ -60,30 +63,49 @@ def get_transforms(args):
             if args.skull_strip
             else transforms.Identityd(keys="mask"),
             transforms.CropForegroundd(
-                keys=("mask", "image"),
+                keys=("mask", "image", "t1"),
                 source_key="mask",
                 allow_smaller=True,
                 margin=1,
+                allow_missing_keys=True,
             ),
             # based on this comment: https://github.com/pboutinaud/SHIVA_PVS/issues/2#issuecomment-1499029783 and what they mention in the paper
-            transforms.Orientationd(keys=["image", "mask"], axcodes="RAS"),
-            transforms.ResizeWithPadOrCropD(spatial_size=size, keys=["image", "mask"]),
+            transforms.Orientationd(
+                keys=["image", "mask", "t1"], allow_missing_keys=True, axcodes="RAS"
+            ),
+            transforms.ResizeWithPadOrCropD(
+                spatial_size=size, keys=["image", "mask", "t1"], allow_missing_keys=True
+            ),
         ]
     )
     return load_transforms
 
 
-def main(args):
+def get_weights(args):
     # The tf model files for the predictors, the prediction will be averaged
     predictor_files = args.model
     if not predictor_files:
-        predictor_files = [
-            f"WMH/v0-FLAIR.WMH/20220412-192541_Unet3Dv2-10.7.2-1.8-FLAIR.WMH_fold_WMH_1x5_2ndUnat_fold_{i}_model.h5"
-            for i in range(5)
-        ]
+        if args.version == "v0":
+            predictor_files = [
+                f"WMH/v0-FLAIR.WMH/20220412-192541_Unet3Dv2-10.7.2-1.8-FLAIR.WMH_fold_WMH_1x5_2ndUnat_fold_{i}_model.h5"
+                for i in range(5)
+            ]
+        elif args.version == "v1-T1":
+            predictor_files = [
+                f"WMH/v1-T1-FLAIR.WMH/20230427-215909_Unet3Dv3-10.7.2-1.8-T1_FLAIR.WMH-from15_fold_{i}_model.h5"
+                for i in range(5)
+            ]
+        else:
+            raise ValueError(f"Unknown version {args.version}")
         print(
             f"Using default model ensemble from {os.path.dirname(predictor_files[0])}"
         )
+    return predictor_files
+
+
+def main(args):
+    args["version"] = "v0" if args.t1 is None else "v1-T1"
+    predictor_files = get_weights(args)
 
     for input_image in args.input:
         print(f"Predicting {input_image}")
@@ -108,22 +130,32 @@ def main(args):
         )
 
 
+def preprocess_images(img):
+    img = img.numpy()
+    img /= np.percentile(img, 99)
+    return np.reshape(img, (1, *size, 1))
+
+
 def predict_image(
     input_path,
+    t1_path,
     output_path,
     mask_path,
     predictor_files,
     t,
     save_original=False,
     verbose=True,
-    threshold=0.2,  # according to README.md https://github.com/pboutinaud/SHIVA_WMH/tree/main/WMH/v0/FLAIR.WMH
+    threshold=0.2,  # according to README.md https://github.com/pboutinaud/SHIVA_WMH/tree/main/WMH/v0/FLAIR.WMH, 0.5 for newer models gives really bad results
 ):
     img = {"image": input_path, "mask": mask_path}
+    if t1_path:
+        img["t1"] = t1_path
+
     img = t(img)
-    image = img["image"].numpy()
-    image /= np.percentile(image, 99)
-    mask = img["mask"].numpy()
-    input_image = np.reshape(image, (1, *size, 1))
+    input_image = preprocess_images(img["image"])
+    if t1_path:
+        t1 = preprocess_images(img["t1"])
+        input_image = np.concatenate([t1, input_image], axis=-1)
     predictions = []
     for predictor_file in predictor_files:
         tf.keras.backend.clear_session()
@@ -140,8 +172,8 @@ def predict_image(
             print(prediction.sum())
         predictions.append(prediction)
     # Average all predictions
+    mask = img["mask"].numpy()
     predictions = np.stack(predictions, axis=0)[..., 0]
-
     predictions = np.mean(predictions, axis=0) * (mask > 0)
     if threshold > 0:
         predictions = (predictions > threshold).astype(np.uint8)
@@ -176,6 +208,12 @@ if __name__ == "__main__":
         help="input image",
     )
     parser.add_argument(
+        "-t1" "--t1",
+        type=str,
+        action="append",
+        help="T1 image (optional)",
+    )
+    parser.add_argument(
         "-b",
         "--brainmask",
         type=str,
@@ -186,7 +224,7 @@ if __name__ == "__main__":
         "-o",
         "--output",
         type=str,
-        help="path for the output file (output of the inference from tensorflow model). If None, the output will be saved in the same directory as th einput (with the suffix '_wmh_seg.nii.gz')",
+        help="path for the output file (output of the inference from tensorflow model). If None, the output will be saved in the same directory as the input (with the suffix '_wmh_seg.nii.gz')",
         default=None,
     )
 
@@ -206,6 +244,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if args.t1 and len(args.t1) != len(args.input):
+        raise ValueError("T1 images must be provided for each input image")
 
     if len(args.input) > 1 and (args.output is not None or args.brainmask is not None):
         raise ValueError(
